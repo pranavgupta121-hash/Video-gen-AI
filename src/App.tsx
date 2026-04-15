@@ -14,7 +14,8 @@ import {
   Layout,
   Smartphone,
   Plus,
-  X
+  X,
+  Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -158,28 +159,76 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-orange-500/30">
+    <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-blue-500/30">
       <Toaster position="top-center" richColors />
       
       {/* Background Glow */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-orange-500/10 blur-[120px] rounded-full" />
-        <div className="absolute -bottom-[10%] -right-[10%] w-[40%] h-[40%] bg-blue-500/10 blur-[120px] rounded-full" />
+        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-blue-500/10 blur-[120px] rounded-full" />
+        <div className="absolute -bottom-[10%] -right-[10%] w-[40%] h-[40%] bg-purple-500/10 blur-[120px] rounded-full" />
       </div>
 
       <header className="relative z-10 border-b border-white/10 backdrop-blur-md bg-black/20">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
-              <Video className="w-6 h-6 text-white" />
+          <div className="flex items-center gap-3 group cursor-pointer">
+            <div className="relative">
+              <motion.div 
+                animate={{ 
+                  rotate: [0, 360],
+                }}
+                transition={{ 
+                  duration: 8, 
+                  repeat: Infinity, 
+                  ease: "linear" 
+                }}
+                className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-60 transition-opacity"
+              />
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="relative w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20"
+              >
+                <motion.div
+                  animate={{ 
+                    scale: [1, 1.2, 1],
+                    opacity: [0.8, 1, 0.8]
+                  }}
+                  transition={{ 
+                    duration: 2, 
+                    repeat: Infinity, 
+                    ease: "easeInOut" 
+                  }}
+                >
+                  <Zap className="w-6 h-6 text-white fill-white/20" />
+                </motion.div>
+              </motion.div>
             </div>
-            <h1 className="text-2xl font-bold tracking-tighter">VividGen <span className="text-orange-500">AI</span></h1>
+            <motion.h1 
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="text-2xl font-bold tracking-tighter italic"
+            >
+              Clipova <span className="text-blue-500 relative">
+                AI
+                <motion.span 
+                  animate={{ 
+                    top: ["0%", "100%", "0%"],
+                  }}
+                  transition={{ 
+                    duration: 3, 
+                    repeat: Infinity, 
+                    ease: "linear" 
+                  }}
+                  className="absolute left-0 right-0 h-[1px] bg-blue-400/50 shadow-[0_0_8px_rgba(96,165,250,0.5)]"
+                />
+              </span>
+            </motion.h1>
           </div>
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-white/60">
             <a href="#" className="hover:text-white transition-colors">Templates</a>
             <a href="#" className="hover:text-white transition-colors">Pricing</a>
             <a href="#" className="hover:text-white transition-colors">Docs</a>
-            <Button variant="outline" className="border-white/10 hover:bg-white/5">Sign In</Button>
+            <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 border-none shadow-lg shadow-blue-500/20">Sign In</Button>
           </div>
         </div>
       </header>
@@ -189,7 +238,7 @@ export default function App() {
         <div className="space-y-8">
           <div className="space-y-4">
             <h2 className="text-5xl font-extrabold tracking-tight leading-[1.1]">
-              Turn your ideas into <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-600">stunning videos</span> in seconds.
+              Turn your ideas into <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600">stunning videos</span> in seconds.
             </h2>
             <p className="text-lg text-white/60 max-w-lg">
               Our AI handles the script, voiceover, and editing. Just provide a topic or upload your own images.
@@ -207,7 +256,7 @@ export default function App() {
                 <Input 
                   id="topic"
                   placeholder="e.g. The future of space exploration"
-                  className="bg-white/5 border-white/10 focus:border-orange-500/50 transition-all h-12"
+                  className="bg-white/5 border-white/10 focus:border-blue-500/50 transition-all h-12 text-white"
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
                   disabled={isGenerating}
@@ -218,11 +267,11 @@ export default function App() {
                 <Label className="text-white/80">Video Format</Label>
                 <Tabs value={format} onValueChange={(v) => setFormat(v as any)} className="w-full">
                   <TabsList className="grid grid-cols-2 bg-white/5 border border-white/10">
-                    <TabsTrigger value="landscape" className="data-[state=active]:bg-orange-500 data-[state=active]:text-white">
+                    <TabsTrigger value="landscape" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
                       <Layout className="w-4 h-4 mr-2" />
                       Landscape (16:9)
                     </TabsTrigger>
-                    <TabsTrigger value="portrait" className="data-[state=active]:bg-orange-500 data-[state=active]:text-white">
+                    <TabsTrigger value="portrait" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
                       <Smartphone className="w-4 h-4 mr-2" />
                       Portrait (9:16)
                     </TabsTrigger>
@@ -247,7 +296,7 @@ export default function App() {
                   <button 
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isGenerating}
-                    className="aspect-square rounded-lg border-2 border-dashed border-white/10 flex flex-col items-center justify-center hover:border-orange-500/50 hover:bg-white/5 transition-all"
+                    className="aspect-square rounded-lg border-2 border-dashed border-white/10 flex flex-col items-center justify-center hover:border-blue-500/50 hover:bg-white/5 transition-all"
                   >
                     <Plus className="w-6 h-6 text-white/40" />
                     <span className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">Upload</span>
@@ -265,7 +314,7 @@ export default function App() {
             </CardContent>
             <CardFooter>
               <Button 
-                className="w-full h-14 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-lg font-bold shadow-xl shadow-orange-500/20 transition-all active:scale-[0.98]"
+                className="w-full h-14 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-lg font-bold shadow-xl shadow-blue-500/20 transition-all active:scale-[0.98]"
                 onClick={startGeneration}
                 disabled={isGenerating}
               >
@@ -297,7 +346,7 @@ export default function App() {
                 className="h-full flex flex-col items-center justify-center text-center space-y-6 p-12 border-2 border-dashed border-white/5 rounded-3xl"
               >
                 <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center">
-                  <Video className="w-10 h-10 text-white/20" />
+                  <Zap className="w-10 h-10 text-white/20" />
                 </div>
                 <div className="space-y-2">
                   <h3 className="text-xl font-bold">Ready to generate</h3>
@@ -329,7 +378,7 @@ export default function App() {
                     ) : (
                       <div className="flex flex-col items-center gap-4">
                         <div className="relative">
-                          <div className="w-20 h-20 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin" />
+                          <div className="w-20 h-20 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
                           <div className="absolute inset-0 flex items-center justify-center">
                             <span className="text-sm font-bold">{Math.round(progress?.progress || 0)}%</span>
                           </div>
@@ -388,12 +437,12 @@ export default function App() {
                     <ScrollArea className="h-32">
                       <div className="space-y-2 text-sm font-mono text-white/60">
                         <div className="flex items-center gap-2">
-                          <span className="text-orange-500">[{new Date().toLocaleTimeString()}]</span>
+                          <span className="text-blue-500">[{new Date().toLocaleTimeString()}]</span>
                           <span>Job initialized: {currentJobId}</span>
                         </div>
                         {progress && (
                           <div className="flex items-center gap-2">
-                            <span className="text-orange-500">[{new Date().toLocaleTimeString()}]</span>
+                            <span className="text-blue-500">[{new Date().toLocaleTimeString()}]</span>
                             <span>{progress.step} - {Math.round(progress.progress)}%</span>
                           </div>
                         )}
@@ -410,8 +459,8 @@ export default function App() {
       <footer className="relative z-10 border-t border-white/10 mt-24 py-12">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2 text-white/40 text-sm">
-            <Video className="w-4 h-4" />
-            <span>© 2026 VividGen AI. All rights reserved.</span>
+            <Zap className="w-4 h-4" />
+            <span>© 2026 Clipova AI. All rights reserved.</span>
           </div>
           <div className="flex items-center gap-8 text-sm font-medium text-white/40">
             <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
