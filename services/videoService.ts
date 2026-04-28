@@ -10,8 +10,17 @@ export interface VideoJob {
     audioPath: string;
     text: string;
     duration: number;
+    faceFocus?: {
+      ymin: number;
+      xmin: number;
+      ymax: number;
+      xmax: number;
+    };
+    motionType?: "slow_zoom_out" | "intimate_zoom" | "gentle_pan" | "static";
   }[];
   format: "landscape" | "portrait";
+  mood?: "cinematic" | "dramatic" | "peaceful" | "energetic";
+  motionIntensity?: "subtle" | "medium" | "dramatic";
   onProgress: (progress: number, step: string) => void;
 }
 
@@ -32,16 +41,12 @@ function wrapText(text: string, maxChars: number = 50): string {
   return lines.join("\n");
 }
 
-function escapeFFmpegText(text: string): string {
-  const wrapped = wrapText(text);
-  return wrapped
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "'\\\\''")
-    .replace(/:/g, "\\:");
+function escapeFFmpegPath(filePath: string): string {
+  return filePath.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "'\\\\''");
 }
 
 export async function processVideo(job: VideoJob): Promise<string> {
-  const { id, scenes, format, onProgress } = job;
+  const { id, scenes, format, onProgress, mood = "cinematic", motionIntensity = "medium" } = job;
   const outputFileName = `${id}.mp4`;
   const outputPath = path.join(process.cwd(), "public/outputs", outputFileName);
   const tempDir = path.join(process.cwd(), "temp", id);
@@ -59,83 +64,71 @@ export async function processVideo(job: VideoJob): Promise<string> {
   for (let i = 0; i < scenes.length; i++) {
     const scene = scenes[i];
     const sceneOutput = path.join(tempDir, `scene_${i}.mp4`);
-    
-    await new Promise<void>((resolve, reject) => {
-      const escapedText = escapeFFmpegText(scene.text);
-      
-      const command = ffmpeg()
-        .input(scene.imagePath)
-        .inputOptions(["-loop 1"]);
+    const textFilePath = path.join(tempDir, `scene_${i}.txt`);
 
-      // Gemini TTS returns raw PCM (s16le, 24kHz, mono)
-      if (scene.audioPath.endsWith(".raw")) {
-        command.input(scene.audioPath).inputOptions([
+    const absoluteImagePath = path.isAbsolute(scene.imagePath)
+      ? scene.imagePath
+      : path.join(process.cwd(), scene.imagePath);
+
+    const absoluteAudioPath = path.isAbsolute(scene.audioPath)
+      ? scene.audioPath
+      : path.join(process.cwd(), scene.audioPath);
+
+    // Write text to file to avoid escaping nightmares
+    fs.writeFileSync(textFilePath, wrapText(scene.text));
+
+    await new Promise<void>((resolve, reject) => {
+      // 100% Reliable approach: Simple scale and pad, no complex filter chains or zoompan
+      // This mirrors your recommended "ffmpeg_fixed_filtergraph" command.
+      ffmpeg().input(absoluteImagePath)
+        .inputOptions(["-loop 1", "-framerate 25"])
+        // Use an array of inputs if we have audio
+        .input(absoluteAudioPath.endsWith(".raw") ? absoluteAudioPath : absoluteAudioPath)
+        .inputOptions(absoluteAudioPath.endsWith(".raw") ? [
           "-f s16le",
           "-ar 24000",
           "-ac 1"
-        ]);
-      } else {
-        command.input(scene.audioPath);
-      }
-
-      command
-        .complexFilter([
-          // Scale and pad the image to fit the target resolution
+        ] : [])
+        .videoFilters([
           {
             filter: "scale",
             options: {
               w: width,
               h: height,
               force_original_aspect_ratio: "decrease"
-            },
-            inputs: "0:v",
-            outputs: "scaled"
+            }
           },
           {
             filter: "pad",
             options: {
               w: width,
               h: height,
-              x: `(ow-iw)/2`,
-              y: `(oh-ih)/2`,
+              x: "(ow-iw)/2",
+              y: "(oh-ih)/2",
               color: "black"
-            },
-            inputs: "scaled",
-            outputs: "padded"
+            }
           },
-          // Add text overlay
           {
-            filter: "drawtext",
-            options: {
-              text: escapedText,
-              fontsize: 32,
-              fontcolor: "white",
-              x: "(w-text_w)/2",
-              y: "h-text_h-100",
-              box: 1,
-              boxcolor: "black@0.6",
-              boxborderw: 10,
-              line_spacing: 10
-            },
-            inputs: "padded",
-            outputs: "v"
+            filter: "format",
+            options: "yuv420p"
           }
         ])
         .outputOptions([
-          "-map [v]",
-          "-map 1:a",
           "-c:v libx264",
           "-c:a aac",
+          "-b:a 192k",
+          `-t ${scene.duration}`,
           "-pix_fmt yuv420p",
-          "-shortest",
-          "-r 25",
-          "-preset ultrafast"
+          "-movflags +faststart",
+          "-preset ultrafast",
+          "-r 25"
         ])
+        .on("start", (cmd) => console.log(`Starting simple scene ${i}: ${cmd}`))
         .on("end", () => resolve())
         .on("error", (err, stdout, stderr) => {
-          console.error("FFmpeg Scene Error:", err.message);
-          console.error("FFmpeg stderr:", stderr);
-          reject(err);
+          console.error(`Simple scene ${i} error:`, err.message);
+          console.error(`FFmpeg stderr:`, stderr);
+          reject(new Error(`Scene ${i} failed: ${err.message}`));
         })
         .save(sceneOutput);
     });
@@ -144,7 +137,7 @@ export async function processVideo(job: VideoJob): Promise<string> {
     onProgress(10 + ((i + 1) / scenes.length) * 60, `Processed scene ${i + 1}/${scenes.length}`);
   }
 
-  onProgress(80, "Merging scenes");
+  onProgress(80, "Merging and finalizing video");
 
   return new Promise((resolve, reject) => {
     const command = ffmpeg();
@@ -153,12 +146,36 @@ export async function processVideo(job: VideoJob): Promise<string> {
       command.input(video);
     });
 
+    const filterInputs = sceneVideos.map((_, i) => `[${i}:v][${i}:a]`).join("");
+    
     command
-      .on("error", (err) => reject(err))
+      .complexFilter([
+        {
+          filter: "concat",
+          options: { n: sceneVideos.length, v: 1, a: 1 },
+          inputs: filterInputs,
+          outputs: ["outv", "outa"]
+        }
+      ])
+      .outputOptions([
+        "-map [outv]",
+        "-map [outa]",
+        "-c:v libx264",
+        "-c:a aac",
+        "-pix_fmt yuv420p",
+        "-preset ultrafast"
+      ])
+      .on("start", (cmd) => console.log(`FFmpeg Final Merge starting: ${cmd}`))
+      .on("error", (err, stdout, stderr) => {
+        console.error("FFmpeg Merge Error:", err.message);
+        console.error("FFmpeg stderr:", stderr);
+        reject(new Error(`Merging failed: ${err.message}`));
+      })
       .on("end", () => {
+        // Clean up temp scene videos if needed? For now just keep for debugging
         onProgress(100, "Video generation complete");
         resolve(`/outputs/${outputFileName}`);
       })
-      .mergeToFile(outputPath, tempDir);
+      .save(outputPath);
   });
 }

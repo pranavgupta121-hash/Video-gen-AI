@@ -32,9 +32,23 @@ dirs.forEach((dir) => {
 });
 
 app.use(cors());
-app.use(express.json({ limit: "50mb" }));
-app.use("/outputs", express.static(path.join(__dirname, "public/outputs")));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ extended: true, limit: "100mb" }));
+app.use("/outputs", express.static(path.join(process.cwd(), "public/outputs")));
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+// Global error handler for middleware errors
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof multer.MulterError) {
+    console.error("Multer Error:", err);
+    return res.status(400).json({ error: `Upload error: ${err.message}` });
+  }
+  if (err) {
+    console.error("Global Server Error:", err);
+    return res.status(500).json({ error: "Internal server error", details: err.message });
+  }
+  next();
+});
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -54,7 +68,69 @@ io.on("connection", (socket) => {
   });
 });
 
+// Global job store (In-memory for simplicity)
+const jobs = new Map<string, any>();
+
 // API Routes
+app.post("/api/v1/stories/create", (req, res) => {
+  upload.array("images")(req, res, async (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    // In a real app we'd parse the 'config' field from req.body too
+    // For now we'll use defaults or whatever is passed in body
+    const { mood = "cinematic", motionIntensity = "medium", format = "landscape" } = req.body;
+    const jobId = uuidv4();
+    const files = req.files as any[];
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: "At least 1 image required" });
+    }
+
+    const jobData = {
+      job_id: jobId,
+      status: "queued",
+      progress: 0,
+      message: "Job queued for processing",
+      output_url: null,
+      metadata: { mood, motionIntensity, format }
+    };
+
+    jobs.set(jobId, jobData);
+    res.json(jobData);
+
+    // This would be handled by the frontend orchestrator normally, 
+    // but for the API we'll mock the start (the frontend will still use /api/process-video)
+  });
+});
+
+app.get("/api/v1/stories/:jobId/status", (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  res.json(job);
+});
+
+app.get("/api/v1/stories/:jobId/download", (req, res) => {
+  const output_path = path.join(process.cwd(), "public/outputs", `${req.params.jobId}.mp4`);
+  if (!fs.existsSync(output_path)) {
+    return res.status(404).json({ error: "Video not ready or expired" });
+  }
+  res.download(output_path);
+});
+
+app.post("/api/upload-images", upload.array("images"), (req, res) => {
+  console.log("Upload attempt received");
+  
+  if (!req.files || (req.files as any[]).length === 0) {
+    console.warn("Upload attempt: No files received");
+    return res.status(400).json({ error: "No files uploaded" });
+  }
+
+  const files = req.files as any[];
+  console.log(`Successfully uploaded ${files.length} images`);
+  const paths = files.map(f => `/uploads/${f.filename}`);
+  res.json({ paths });
+});
+
 app.post("/api/upload-asset", async (req, res) => {
   const { base64, type, extension } = req.body;
   const fileName = `${uuidv4()}.${extension}`;
@@ -66,9 +142,22 @@ app.post("/api/upload-asset", async (req, res) => {
 });
 
 app.post("/api/process-video", async (req, res) => {
-  const { scenes, format = "landscape" } = req.body;
+  const { scenes, format = "landscape", mood = "cinematic", motionIntensity = "medium" } = req.body;
+  if (!scenes || !Array.isArray(scenes) || scenes.length === 0) {
+    return res.status(400).json({ error: "Missing or invalid scenes" });
+  }
   const jobId = uuidv4();
   
+  const jobData = {
+    job_id: jobId,
+    status: "processing",
+    progress: 0,
+    message: "Initializing...",
+    output_url: null
+  };
+  jobs.set(jobId, jobData);
+  
+  console.log(`Starting video processing job: ${jobId}`);
   res.json({ jobId });
 
   try {
@@ -76,22 +165,44 @@ app.post("/api/process-video", async (req, res) => {
       id: jobId,
       scenes,
       format,
+      mood,
+      motionIntensity,
       onProgress: (progress, step) => {
+        console.log(`Job ${jobId} Progress: ${progress}% - ${step}`);
+        const currentJob = jobs.get(jobId);
+        if (currentJob) {
+          currentJob.progress = progress;
+          currentJob.message = step;
+          currentJob.status = progress === 100 ? "completed" : "processing";
+        }
         io.emit(`progress:${jobId}`, { step, progress });
       }
     });
 
-    io.emit(`progress:${jobId}`, { step: "Completed", progress: 100, videoUrl });
+    console.log(`Job ${jobId} Completed: ${videoUrl}`);
+    const finalJob = jobs.get(jobId);
+    if (finalJob) {
+      finalJob.output_url = `/api/v1/stories/${jobId}/download`;
+      finalJob.status = "completed";
+      finalJob.progress = 100;
+      finalJob.output_path = videoUrl; // store internal path
+    }
+
+    io.emit(`progress:${jobId}`, { step: "Completed", progress: 100, videoUrl: `/outputs/${jobId}.mp4` });
   } catch (error) {
-    console.error("Video processing failed:", error);
+    console.error(`Job ${jobId} Failed:`, error);
+    const failedJob = jobs.get(jobId);
+    if (failedJob) {
+      failedJob.status = "failed";
+      failedJob.message = error instanceof Error ? error.message : "Unknown error";
+    }
     io.emit(`progress:${jobId}`, { step: "Failed", progress: 0, error: error instanceof Error ? error.message : "Unknown error" });
   }
 });
 
-app.post("/api/upload-images", upload.array("images"), (req: any, res) => {
-  const files = req.files as any[];
-  const paths = files.map(f => `/uploads/${f.filename}`);
-  res.json({ paths });
+// JSON fallback for missing API routes
+app.all("/api/*all", (req, res) => {
+  res.status(404).json({ error: `API route ${req.method} ${req.originalUrl} not found` });
 });
 
 // Vite middleware
@@ -104,7 +215,7 @@ if (process.env.NODE_ENV !== "production") {
 } else {
   const distPath = path.join(process.cwd(), "dist");
   app.use(express.static(distPath));
-  app.get("*", (req, res) => {
+  app.get("*all", (req, res) => {
     res.sendFile(path.join(distPath, "index.html"));
   });
 }

@@ -1,0 +1,24 @@
+{
+  "entities": {
+    "UserActivity": {
+      "title": "User Activity",
+      "description": "Logs of user actions within the application for monitoring purposes.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The unique identifier of the user (if authenticated, otherwise anonymous ID)." },
+        "action": { "type": "string", "description": "The type of action performed (e.g., 'start_generation', 'upload_image', 'view_video')." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the action occurred." },
+        "details": { "type": "object", "description": "Additional context about the action (e.g., topic, duration)." },
+        "userAgent": { "type": "string", "description": "The browser/device information." },
+        "status": { "type": "string", "enum": ["success", "failed", "pending"], "description": "The outcome of the action." }
+      },
+      "required": ["action", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/logs/{logId}": {
+      "schema": "UserActivity",
+      "description": "Collection of all system-wide user activities."
+    }
+  }
+}
